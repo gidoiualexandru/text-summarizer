@@ -1,0 +1,36 @@
+# Node.js dependencies
+frontend/node_modules/
+frontend/package-lock.json
+
+# Python virtual environment
+backend/venv/
+
+# SQLite database
+backend/summaries.db
+
+# Python compiled files
+*.pyc
+__pycache__/
+
+# Logs
+*.log
+
+# Environment files
+.env
+
+# Tailwind CSS build files
+frontend/dist/
+frontend/.next/
+frontend/out/
+frontend/build/
+
+# IDE specific files
+.vscode/
+.idea/
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Git specific
+*.swp

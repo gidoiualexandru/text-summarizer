@@ -1,34 +1,40 @@
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Request
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List
-import requests
+from datetime import datetime
+import time
 from newspaper import Article
 from sumy.parsers.plaintext import PlaintextParser
 from sumy.nlp.tokenizers import Tokenizer
 from sumy.summarizers.lsa import LsaSummarizer
 from sumy.nlp.stemmers import Stemmer
 from sumy.utils import get_stop_words
-from fastapi.middleware.cors import CORSMiddleware
-from database import SessionLocal, engine
+from sqlalchemy.orm import Session
+from database import engine, SessionLocal
 from models import Base, SummaryRecord
-from datetime import datetime
 
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI()
+usage_data = {}
 
-origins = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-]
+def rate_limiter(request: Request):
+    ip = request.client.host
+    now = time.time()
+    if ip not in usage_data:
+        usage_data[ip] = []
+    usage_data[ip] = [t for t in usage_data[ip] if now - t < 60]
+    if len(usage_data[ip]) >= 15:
+        raise HTTPException(status_code=429, detail="Too many requests")
+    usage_data[ip].append(now)
+    return ip
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
 class SummarizeRequest(BaseModel):
     text: Optional[str] = None
@@ -42,65 +48,68 @@ class HistoryRecordResponse(BaseModel):
     id: int
     summary_text: str
     created_at: datetime
-
     class Config:
         from_attributes = True
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+app = FastAPI()
 
-def summarize_text_with_sumy(text: str, sentences_count: int) -> str:
-    LANGUAGE = "english"
-    parser = PlaintextParser.from_string(text, Tokenizer(LANGUAGE))
-    summarizer = LsaSummarizer(Stemmer(LANGUAGE))
-    summarizer.stop_words = get_stop_words(LANGUAGE)
-
-    summary_sentences = summarizer(parser.document, sentences_count)
-    summary_text = " ".join([str(sentence) for sentence in summary_sentences])
-    return summary_text
+origins = ["http://localhost:3000","http://127.0.0.1:3000"]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.get("/")
 def root():
-    return {"message": "Welcome to the Text Summarizer API!"}
+    return {"message": "Welcome"}
 
 @app.post("/summarize", response_model=SummarizeResponse)
-def summarize_endpoint(request: SummarizeRequest, db=Depends(get_db)):
-    """
-    Summarize either raw text or a URL. Then store the result in the DB.
-    """
-    if not request.text and not request.url:
-        raise HTTPException(status_code=400, detail="No text or URL provided.")
-
-    text_data = request.text
-    if request.url:
+def summarize_endpoint(r: SummarizeRequest, db: Session = Depends(get_db), ip=Depends(rate_limiter)):
+    if not r.text and not r.url:
+        raise HTTPException(status_code=400, detail="No text or URL")
+    text_data = r.text
+    if r.url:
         try:
-            article = Article(request.url)
+            article = Article(r.url)
             article.download()
             article.parse()
             text_data = article.text
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Failed to process URL: {e}")
-
+        except:
+            raise HTTPException(status_code=400, detail="URL error")
     if text_data:
-        summary = summarize_text_with_sumy(text_data, request.sentences_count)
-
-        record = SummaryRecord(summary_text=summary)
+        parser = PlaintextParser.from_string(text_data, Tokenizer("english"))
+        summarizer = LsaSummarizer(Stemmer("english"))
+        summarizer.stop_words = get_stop_words("english")
+        summary_sentences = summarizer(parser.document, r.sentences_count)
+        summary_text = " ".join(str(s) for s in summary_sentences)
+        record = SummaryRecord(summary_text=summary_text)
         db.add(record)
         db.commit()
         db.refresh(record)
-
-        return SummarizeResponse(summary=summary)
-    else:
-        raise HTTPException(status_code=400, detail="No valid text found to summarize.")
+        return SummarizeResponse(summary=summary_text)
+    raise HTTPException(status_code=400, detail="No valid text")
 
 @app.get("/history", response_model=List[HistoryRecordResponse])
-def get_history(db=Depends(get_db)):
-    """
-    Return all summary records in the DB (sorted newest first).
-    """
-    records = db.query(SummaryRecord).order_by(SummaryRecord.created_at.desc()).all()
-    return records
+def get_history(limit: int = 10, offset: int = 0, search: Optional[str] = None, db: Session = Depends(get_db), ip=Depends(rate_limiter)):
+    q = db.query(SummaryRecord).order_by(SummaryRecord.created_at.desc())
+    if search:
+        q = q.filter(SummaryRecord.summary_text.ilike(f"%{search}%"))
+    return q.offset(offset).limit(limit).all()
+
+@app.delete("/history/{record_id}")
+def delete_history_entry(record_id: int, db: Session = Depends(get_db), ip=Depends(rate_limiter)):
+    record = db.query(SummaryRecord).filter(SummaryRecord.id == record_id).first()
+    if not record:
+        raise HTTPException(status_code=404, detail="Not found")
+    db.delete(record)
+    db.commit()
+    return {"message": "Deleted"}
+
+@app.delete("/history")
+def delete_all_history(db: Session = Depends(get_db), ip=Depends(rate_limiter)):
+    db.query(SummaryRecord).delete()
+    db.commit()
+    return {"message": "All deleted"}
