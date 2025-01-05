@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+pydantic
+requests
+newspaper3k
+sumy
+sqlalchemy
+aiosqlite
