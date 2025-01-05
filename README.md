@@ -1,4 +1,4 @@
-📝 Text Summarizer Project
+# 📝 Text Summarizer Project
 
 Welcome to the Text Summarizer! This project provides a simple and efficient way to summarize content from either a URL or plain text. Specify the number of sentences (up to 10), and get concise summaries in seconds. Designed with ease of use in mind, this tool is perfect for quickly extracting key points from any text.
 
@@ -35,19 +35,19 @@ Prerequisites
 
 1️⃣ Backend Setup
 
-    Navigate to the backend folder:
+Navigate to the backend folder:
 
-cd backend
+    cd backend
 
 Create a virtual environment:
 
-python -m venv venv
+    python -m venv venv
 
 Activate the virtual environment:
 
-    On macOS/Linux:
+On macOS/Linux:
 
-source venv/bin/activate
+    source venv/bin/activate
 
 On Windows:
 
@@ -55,31 +55,32 @@ On Windows:
 
 Install dependencies:
 
-pip install -r requirements.txt
+    pip install -r requirements.txt
 
 Run the FastAPI server:
 
     uvicorn main:app --reload
 
-    Access the API at:
+Access the API at:
+
         API Docs: http://127.0.0.1:8000/docs
         API Base URL: http://127.0.0.1:8000
 
 2️⃣ Frontend Setup
 
-    Navigate to the frontend folder:
+Navigate to the frontend folder:
 
-cd ../frontend
+    cd ../frontend
 
 Install dependencies:
 
-npm install
+    npm install
 
 Start the development server:
 
     npm start
 
-    Open your browser and visit: http://localhost:3000
+Open your browser and visit: http://localhost:3000
 
 🧪 Usage
 
